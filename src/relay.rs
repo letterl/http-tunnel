@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use crate::tunnel::TunnelCtx;
 use log::{debug, error, info};
-use serde::export::Formatter;
+use std::fmt::Formatter;
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::time::timeout;

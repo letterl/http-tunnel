@@ -15,6 +15,7 @@ HTTP Tunnel example written in Rust.
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
 tokio-native-tls = "0.3"
 native-tls = "0.2"
 clap = "3.0.0-beta.1"
