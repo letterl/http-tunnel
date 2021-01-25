@@ -12,6 +12,7 @@ description = """
 HTTP Tunnel example written in Rust.
 """
 
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -19,7 +20,7 @@ openssl = { version = "0.10", features = ["vendored"] }
 tokio-native-tls = "0.3"
 native-tls = "0.2"
 clap = "3.0.0-beta.1"
-regex = "1.3"
+regex = "1.4.3"
 rand = "0.8"
 yaml-rust = "0.4"
 serde = { version = "1.0", features = ["derive"] }
@@ -39,7 +40,7 @@ tokio-util = { version = "0.6", features = ["full"] }
 bytes = "1"
 futures = "0.3"
 time = "0.1"
-
+base64 = "0.13.0"
 [dev-dependencies]
 tokio-test = "0.4"
 
@@ -47,4 +48,7 @@ tokio-test = "0.4"
 opt-level = 0
 
 [profile.release]
-opt-level = 3
+opt-level = 'z'
+lto = 'fat'
+codegen-units = 1
+panic = 'abort'

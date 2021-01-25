@@ -13,6 +13,7 @@ extern crate serde_derive;
 extern crate strum;
 #[macro_use]
 extern crate strum_macros;
+extern crate base64;
 
 use log::{error, info, LevelFilter};
 use rand::{thread_rng, Rng};
@@ -32,6 +33,7 @@ use log4rs::config::{Appender, Root};
 use log4rs::Config;
 use std::io::{Error, ErrorKind};
 use tokio::io::{AsyncRead, AsyncWrite};
+use std::net::{Ipv6Addr, SocketAddrV6};
 
 mod configuration;
 mod http_tunnel_codec;
@@ -50,9 +52,11 @@ async fn main() -> io::Result<()> {
         e
     })?;
 
-    info!("Starting listener on: {}", proxy_configuration.bind_address);
+    // info!("Starting listener on: {}", proxy_configuration.bind_address);
+    let socket = SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), 8686, 0, 0);
+    let mut tcp_listener = TcpListener::bind(socket)
 
-    let mut tcp_listener = TcpListener::bind(&proxy_configuration.bind_address)
+    // let mut tcp_listener = TcpListener::bind(&proxy_configuration.bind_address)
         .await
         .map_err(|e| {
             error!(

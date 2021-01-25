@@ -15,7 +15,7 @@ use std::fmt::Formatter;
 use tokio::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::time::timeout;
-
+use crate::http_tunnel_codec::HttpConnectRequest;
 pub const NO_TIMEOUT: Duration = Duration::from_secs(300);
 pub const NO_BANDWIDTH_LIMIT: u64 = 1_000_000_000_000_u64;
 const BUFFER_SIZE: usize = 16 * 1024;
@@ -83,12 +83,12 @@ impl Relay {
         mut dest: WriteHalf<W>,
     ) -> io::Result<RelayStats> {
         let mut buffer = [0; BUFFER_SIZE];
-
+        let mut buf:[u8;5] = [1,2,3,4,0];
         let mut total_bytes = 0;
         let mut event_count = 0;
         let start_time = Instant::now();
         let shutdown_reason;
-
+        let mut pasub:u8=0;
         loop {
             let read_result = self
                 .relay_policy
@@ -99,13 +99,16 @@ impl Relay {
                 shutdown_reason = RelayShutdownReasons::ReaderTimeout;
                 break;
             }
-
+            
             let n = match read_result.unwrap() {
                 Ok(n) if n == 0 => {
                     shutdown_reason = RelayShutdownReasons::GracefulShutdown;
                     break;
                 }
-                Ok(n) => n,
+                Ok(n) => {
+                    pasub = HttpConnectRequest::data_xor(pasub,&mut buffer[0..n]).unwrap();
+                    n
+                },
                 Err(e) => {
                     error!(
                         "{} failed to read. Err = {:?}, CTX={}",
@@ -145,6 +148,9 @@ impl Relay {
                 shutdown_reason = rate_violation;
                 break;
             }
+            // let a = String::from_utf8_lossy(&buffer);
+            // info!("BUFFER={}", a);
+
         }
 
         self.shutdown(&mut dest, &shutdown_reason).await;

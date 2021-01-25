@@ -6,13 +6,14 @@
 /// option. This file may not be copied, modified, or distributed
 /// except according to those terms.
 use std::fmt::Write;
-
 use async_trait::async_trait;
 use bytes::BytesMut;
 use log::debug;
 use regex::Regex;
 use tokio::io::{Error, ErrorKind};
 use tokio_util::codec::{Decoder, Encoder};
+use base64::{encode, decode};
+use std::str;
 
 use crate::tunnel::{EstablishTunnelResult, TunnelCtx, TunnelTarget};
 use core::fmt;
@@ -24,7 +25,7 @@ const MAX_HTTP_REQUEST_SIZE: usize = 1024;
 
 /// HTTP/1.1 request representation
 /// Supports only `CONNECT` method
-struct HttpConnectRequest {
+pub struct HttpConnectRequest {
     uri: String,
     // out of scope of this demo, but let's put it here for extensibility
     // e.g. Authorization/Policies headers
@@ -85,7 +86,7 @@ impl Encoder<EstablishTunnelResult> for HttpTunnelCodec {
         dst: &mut BytesMut,
     ) -> Result<(), Self::Error> {
         let (code, message) = match item {
-            EstablishTunnelResult::Ok => (200, "OK"),
+            EstablishTunnelResult::Ok => (200, "Connection established\r\nConnection:keep-alive"),
             EstablishTunnelResult::BadRequest => (400, "BAD_REQUEST"),
             EstablishTunnelResult::Forbidden => (403, "FORBIDDEN"),
             EstablishTunnelResult::OperationNotAllowed => (405, "NOT_ALLOWED"),
@@ -132,24 +133,99 @@ impl From<Error> for EstablishTunnelResult {
 }
 
 /// Basic HTTP Request parser which only purpose is to parse `CONNECT` requests.
-impl HttpConnectRequest {
+impl HttpConnectRequest {   
     pub fn parse(http_request: &[u8]) -> Result<Self, EstablishTunnelResult> {
+
         HttpConnectRequest::precondition_size(http_request)?;
         HttpConnectRequest::precondition_legal_characters(http_request)?;
+        let a= HttpConnectRequest::http_obs(http_request)?;
+        let s = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", a, a);
+        let http_req="CONNECT rep HTTP/1.1\r\nHost: rep\r\n";
+        
+        // let http_target_req = String::from_utf8(http_target_req.to_vec()).expect("Contains only ASCII");
 
-        let http_request = String::from_utf8(http_request.to_vec()).expect("Contains only ASCII");
-
-        let mut lines = http_request.split("\r\n");
+        let mut lines = s.split("\r\n");
         let request_line = HttpConnectRequest::parse_request_line(
             lines
                 .next()
                 .expect("At least a single line is present at this point"),
         )?;
 
+
         Ok(Self {
             uri: request_line.1.to_string(),
             // headers: vec![], // if we want to add headers
         })
+    }
+
+
+   pub fn data_xor<'a>(sub: u8, buf: &'a mut [u8]) -> Result<(u8), EstablishTunnelResult> {
+        let password = b"123456";
+        let mut pasub = sub;
+        for i in 0..buf.len() {
+            buf[i] ^= password[pasub as usize] | pasub;
+            pasub = pasub+1;
+            if pasub == password.len() as u8{
+                pasub=0;
+            }
+        }
+        if buf.len() == 0 {
+            Err(EstablishTunnelResult::BadRequest)
+        } else {
+            Ok((pasub))
+        }
+    }
+
+
+    fn host_xor(host:&String) -> Result<(), EstablishTunnelResult> {
+        let password = b"123456";
+        let mut bytes = decode(host.as_bytes()).unwrap();
+        let mut pasub=0;
+        for i in 0..bytes.len() {
+            bytes[i] ^= password[pasub as usize] | pasub;
+            pasub = pasub+1;
+            if pasub == password.len() as u8{
+                pasub=0;
+            }
+        }
+        //修改解析的值
+        // host=String::from_utf8_lossy(&bytes).into_owned();
+        if bytes.len() == 0 {
+            Err(EstablishTunnelResult::BadRequest)
+        } else {
+            Ok(())
+        }
+        // println!("{}",String::from_utf8_lossy(&bytes));
+    }
+    
+    fn http_obs(http_request: &[u8]) -> Result<String, EstablishTunnelResult>{
+        let http = String::from_utf8_lossy(http_request).into_owned();
+        let re = Regex::new(r"(: )(.+=)").unwrap();
+        let mut host="CR0LGQ0ZCQkGBDU=".to_string();
+        match re.captures(&http){
+            Some(value) => {
+                host= value.get(2).map_or("", |m| m.as_str()).to_string();
+            }
+            None => {}
+        }
+
+        let password = b"123456";
+        let mut bytes = decode(host.as_bytes()).unwrap();
+        let mut pasub:u8=0;
+        for i in 0..bytes.len() {
+            bytes[i] ^= password[pasub as usize] | pasub;
+            pasub = pasub+1;
+            if pasub == password.len() as u8{
+                pasub=0;
+            }
+        }
+        //修改解析的值
+        let s=String::from_utf8_lossy(&bytes).trim_matches(char::from(0)).to_string();
+        if host.len() == 0 {
+            Err(EstablishTunnelResult::BadRequest)
+        } else {
+            Ok(s)
+        }
     }
 
     fn parse_request_line(request_line: &str) -> Result<(&str, &str, &str), EstablishTunnelResult> {
@@ -179,7 +255,7 @@ impl HttpConnectRequest {
     }
 
     fn check_version(version: &str) -> Result<(), EstablishTunnelResult> {
-        if version != "HTTP/1.1" {
+        if  version != "HTTP/1.1" {
             debug!("Bad version {}", version);
             Err(EstablishTunnelResult::BadRequest)
         } else {
@@ -222,7 +298,115 @@ impl HttpConnectRequest {
             Ok(())
         }
     }
+
 }
+
+#[cfg(test)]
+mod test2{
+    use base64::{encode, decode};
+    use regex::Regex;
+    #[test]
+    fn Xor() {
+        let password = b"123456";
+        let mut hostdec = "AAMHGQQOAh0LDxsABgkLBzU=";
+        let mut bytes = decode(hostdec.as_bytes()).unwrap();
+        // let host = String::from_utf8_lossy(&bytes);
+        let mut pasub=0;
+        for i in 0..bytes.len() {
+            bytes[i] ^= password[pasub as usize] | pasub;
+            pasub = pasub+1;
+            if pasub == password.len() as u8{
+                pasub=0;
+            }
+        }
+        println!("{}",String::from_utf8_lossy(&bytes));
+
+        
+    }
+
+    #[test]
+    fn http_obs(){
+        
+        let a = "CONNECT data.video.iqiyi.com HTTP/1.1\r\n
+        Host:data.video.iqiyi.com\r\n
+        Meng: CR0LGQ0ZCQkGBDU=\r\n
+        User-Agent: CuteBi Linux Network, (%>w<%)\r\n
+        
+        ";
+        // let tokens = a.split("\r\n").collect::<Vec<&str>>();
+        // println!("{}",tokens[2]);
+        // let mut temp = tokens[2].trim().split(" ").collect::<Vec<&str>>();
+        // println!("{:?}",temp[1]);
+
+        // for token in fullname.split("token:"){
+        //    println!("token is {}",token);
+        // }
+        let re = Regex::new(r"(: )(.+=)").unwrap();
+        let text = "2012-03-14, 2013-01-01 and 2014-07-05";
+        // match re.captures(a){
+        //     Some(x) => println!("{:?}", x),
+        //     None    => unreachable!()
+        // }
+        let caps = re.captures(a).unwrap();
+        let host = caps.get(2).map_or("", |m| m.as_str());
+        println!("{}",host)
+        // for cap in re.captures_iter(a) {
+        //     println!("Month: {} Day: {} Year: {}", &cap[1], &cap[1], &cap[0]);
+        // }
+    }
+
+    #[test]
+    fn tttttttttt(){
+        let a = b"ABCD";
+        let se = String::from_utf8(a.to_vec()).expect("Contains only ASCII");
+        let bytes = base64::decode("CR0LGQ0ZCQkGBDU=").unwrap();
+        println!("{:?}", bytes);
+
+        let cf = [51,57,46,49,53,54,46,49,53,48,46,49,54,49,58,53,50,50,50,0];
+        // let cf = [0,0,0,0,0,0,0,0];
+        let s = String::from_utf8_lossy(&cf);
+        println!("{:?}", s.trim_matches(char::from(0))); 
+        assert_eq!("ABCD", se);
+
+        let mut a =51;
+        a ^=50 | 1;
+        println!("{:?}",a)
+    }
+
+    #[test]
+    fn adddddddd(){
+        let http_request = b"CONNECT data.video.iqiyi.com HTTP/1.1\r\nHost:data.video.iqiyi.com\r\nMeng: CR0LGQ0ZCQkGBDU=\r\nUser-Agent: CuteBi Linux Network, (%>w<%)\r\n";
+        
+        let se = String::from_utf8(http_request.to_vec()).expect("Contains only ASCII");
+        let re = Regex::new(r"(: )(.+=)").unwrap();
+        let caps = re.captures(&se).unwrap();
+        
+        let mut host = caps.get(2).map_or("", |m| m.as_str()).to_string();
+        println!("职位:{:?}",host);
+        let password:&[u8; 6] = b"123456";
+        let mut bytes = decode(host).unwrap();
+        let mut pasub=0;
+        for i in 0..bytes.len() {
+            bytes[i] ^= password[pasub as usize] | pasub;
+            pasub = pasub+1;
+            if pasub == password.len() as u8{
+                pasub=0;
+            }
+        }
+        //修改解析的值
+        host=String::from_utf8(bytes.to_vec()).expect("Contains only ASCII");
+        let cd = host;
+        println!("{}",cd);
+        let vv = cd.as_bytes();
+        for i in 0..vv.len(){
+            println!("职位:{}",vv[i])
+        }
+        assert_eq!("8.8.8.8:53", cd.trim());
+    }
+
+
+}
+
 
 #[cfg(test)]
 mod tests {
