@@ -83,7 +83,6 @@ impl Relay {
         mut dest: WriteHalf<W>,
     ) -> io::Result<RelayStats> {
         let mut buffer = [0; BUFFER_SIZE];
-        let mut buf:[u8;5] = [1,2,3,4,0];
         let mut total_bytes = 0;
         let mut event_count = 0;
         let start_time = Instant::now();
