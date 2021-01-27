@@ -127,7 +127,7 @@ impl Relay {
                 shutdown_reason = RelayShutdownReasons::WriterTimeout;
                 break;
             }
-
+            
             if let Err(e) = write_result.unwrap() {
                 error!(
                     "{} failed to write {} bytes. Err = {:?}, CTX={}",

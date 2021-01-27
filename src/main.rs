@@ -51,12 +51,11 @@ async fn main() -> io::Result<()> {
         println!("Failed to process parameters. See ./log/application.log for details");
         e
     })?;
-
-    // info!("Starting listener on: {}", proxy_configuration.bind_address);
-    let socket = SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), 8686, 0, 0);
+    let port = proxy_configuration.bind_address.parse::<u16>().unwrap();
+    info!("Starting listener on: {}", proxy_configuration.bind_address);
+    let socket = SocketAddrV6::new(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0), port, 0, 0);
     let mut tcp_listener = TcpListener::bind(socket)
-
-    // let mut tcp_listener = TcpListener::bind(&proxy_configuration.bind_address)
+    // let mut tcp_listener = TcpListener::bind("0.0.0.0:8080")
         .await
         .map_err(|e| {
             error!(
@@ -72,7 +71,6 @@ async fn main() -> io::Result<()> {
             .target_connection
             .dns_cache_ttl,
     );
-
     match &proxy_configuration.mode {
         ProxyMode::HTTP => {
             serve_plain_text(proxy_configuration, &mut tcp_listener, dns_resolver).await?;
@@ -106,9 +104,9 @@ async fn main() -> io::Result<()> {
     };
 
     info!("Proxy stopped");
-
     Ok(())
 }
+
 
 async fn serve_tls(
     config: ProxyConfiguration,
